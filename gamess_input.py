@@ -1,9 +1,7 @@
-from rdkit_utilties import *
+from rdkit_utilities import *
 from rdkit import Chem
-from rdkit.Chem import Draw
 import numpy as np
-from rdkit.Chem import BRICS
-
+from copy import deepcopy
 def get_basis_text(basis):
     basis_text = " $BASIS "
     basis_dict = {
@@ -43,6 +41,18 @@ def get_contrl_text(basis, theory):
         print(list(contrl_dict.keys()))
         exit()
 
+def get_fmoprp_text():
+    fmoprp_text = " $FMOPRP\n"
+    fmoprp_text += "MAXIT=100\n"
+    fmoprp_text += " $END\n"
+    return fmoprp_text
+
+def get_system_text():
+    system_text = " $SYSTEM\n"
+    system_text += "MWORDS=10000\n"
+    system_text += " $END\n"
+    return system_text
+
 def get_data_text(molecule,name):
     data_text = " $DATA\n"
     data_text += f"{name}\n"
@@ -67,15 +77,34 @@ def get_fmoxyz_text(molecule,confID):
     fmoxyz_text += " $END\n"
     return fmoxyz_text
 
-def get_fmo_text(molecule,basis,fragmentation="BRICS"):
+def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",baa = [], bda = []):
     for atom in molecule.GetAtoms():
     # For each atom, set the property "atomNote" to a index+1 of the atom
         atom.SetProp("atomNote", str(atom.GetIdx()))
-    if fragmentation=='BRICS':
+    if fragmentation_style=='BRICS':
+        print ("Fragmenting molecules using BRICS rules...",end="")
         atom_pairs = get_BRICS_pairs(molecule)
+        fragments,bonds = get_BRICS_fragments(molecule)
+        print (f"{len(fragments)} fragments made.")
+        baa = []
+        bda = []
+        for i,bondgrp in enumerate(bonds):
+            bndatms = list(bondgrp[0])
+            i = bndatms[0]+1
+            j = bndatms[1]+1
+            if i in bda:
+                bda.append(j)
+                baa.append(i)
+            else:
+                bda.append(i)
+                baa.append(j)
+    elif len(bda)== len(baa) and len(baa)>0:
+        print ("Making manual fragments from given BAA and BDA lists...",end="")
+        fragments = fragment_selected_bonds(molecule,bda,baa)
+        print (f"{len(fragments)} fragments made.")
+   
+    draw_fragments_to_grid(fragments,name)
 
-    fragmented = BRICS.BreakBRICSBonds(molecule)
-    fragments = Chem.GetMolFrags(fragmented,asMols=True)
     nfrag = len(fragments)
     atomlist = [1 for i in molecule.GetAtoms()]
     for i,frag in enumerate(fragments):
@@ -84,29 +113,43 @@ def get_fmo_text(molecule,basis,fragmentation="BRICS"):
                 atomlist[int(atom.GetProp("atomNote"))] = i+1
     atomlist = np.array(atomlist,dtype='str')
 
+    icharg = []
+    multiplicity = []
+    for frag in fragments:
+        charge = 0
+        mult = 1 
+        for atom in frag.GetAtoms():
+            if atom.GetAtomicNum()>0:
+                charge += atom.GetFormalCharge() 
+                mult += atom.GetNumRadicalElectrons()
+                """
+                if int(atom.GetProp("atomNote"))+1 in baa:
+                    print("BAA")
+                    charge+=1
+                    mult += 0.5
+                elif int(atom.GetProp("atomNote"))+1 in bda:
+                    print("BDA")
+                    charge -=1
+                    mult -= 0.5
+                print(mult,charge)
+        print("Fragment ends")
+        """
+        icharg.append(charge)
+        multiplicity.append(mult)
+    icharg = np.array(icharg,dtype='str')
+    multiplicity = np.array(multiplicity,dtype='str') 
+
     fmo_text = " $FMO\n"
     fmo_text += f"NFRAG={nfrag}\n"
+    fmo_text += f"ICHARG(1)={','.join(icharg)}\n"
+    fmo_text += f"MULT(1)={','.join(multiplicity)}\n"
     fmo_text += f"INDAT(1)={','.join(atomlist)}\n"
     fmo_text += " $END\n"
     # Add initial and final bond terms 
     fmo_text += " $FMOBND\n"
-    bonds = list(BRICS.FindBRICSBonds(molecule))
-    bea = []
-    bed = []
-    for i,bondgrp in enumerate(bonds):
-        bndatms = list(bondgrp[0])
-        i = bndatms[0]+1
-        j = bndatms[1]+1
-        if i in bed:
-            bed.append(j)
-            bea.append(i)
-        else:
-            bed.append(i)
-            bea.append(j)
-    for i in range(len(bed)):
-        fmo_text += f"{-bed[i]:>3} {bea[i]:>3} {basis}\n"
+    for i in range(len(bda)):
+        fmo_text += f"{-bda[i]:>3} {baa[i]:>3} {basis}\n"
     fmo_text += " $END\n"
-
     return fmo_text 
      
 def get_fmohyb_text(basis):
@@ -188,37 +231,49 @@ def get_fmohyb_text(basis):
     fmohyb_text += " $END\n"
     return fmohyb_text
 
-def write_gamess_input_file(smiles,nconf,scftyp,basis,name):
+def write_gamess_input_file(mol,nconf,scftyp,basis,name,fragmentation_style,bda,baa):
     # write gamess FMO input files for each conformer 
     # only the FMOXYZ section would change for each conformation 
-    mol = Chem.MolFromSmiles(smiles)
-    mol = Chem.AddHs(mol)
     for atom in mol.GetAtoms():
         atom.SetProp("atomNote", str(atom.GetIdx()+1))
-    Draw.MolToFile(mol,f"{name}_2Dimage.png",size=(300,300),dpi=300)
-    fragmented=BRICS.BreakBRICSBonds(mol)
-    pieces=Chem.GetMolFrags(fragmented,asMols=True)
-    with open(f'{name}_fragments.svg','w') as svgfile:
-        svgfile.write(Draw._MolsToGridSVG(pieces))
+    system_text = get_system_text()
+    fmoprp_text = get_fmoprp_text()
     basis_text = get_basis_text(basis)
     contrl_text = get_contrl_text(basis, scftyp)
     data_text = get_data_text(mol,name)
     fmohyb_text = get_fmohyb_text(basis)
-    fmo_text = get_fmo_text(mol,basis,"BRICS")
-    mol,sorted_res = gen_unique_conformers(mol,nconf)
-    energyfile = open('conf_energies.txt','w')
-    writer = Chem.SDWriter(f'{name}_conformers.sdf')
-    for confID,e in sorted_res:
-        mol.SetProp('ID',f"{name}_conformer_{confID}")
-        writer.write(mol,confId=confID)
-        energyfile.write('%s,%s\n'%(confID,e))
-        fmoxyz_text = get_fmoxyz_text(mol,confID)
-        filename = f"{name}_{confID}.inp"
-        with open(filename,'w') as outfile:
-            outfile.write(basis_text)
-            outfile.write(contrl_text)
-            outfile.write(data_text)
-            outfile.write(fmoxyz_text)
-            outfile.write(fmo_text)
-            outfile.write(fmohyb_text)
-    energyfile.close()
+    fmo_text = get_fmo_text(mol,name,basis,fragmentation_style,bda,baa)
+    
+    if nconf>0:
+        mol,sorted_res = gen_unique_conformers(mol,nconf)
+        energyfile = open('conf_energies.txt','w')
+        writer = Chem.SDWriter(f'{name}_conformers.sdf')
+        for confID,e in sorted_res:
+            mol.SetProp('ID',f"{name}_conformer_{confID}")
+            writer.write(mol,confId=confID)
+            energyfile.write('%s,%s\n'%(confID,e))
+            fmoxyz_text = get_fmoxyz_text(mol,confID)
+            filename = f"{name}_{confID}.inp"
+            with open(filename,'w') as outfile:
+                outfile.write(system_text)
+                outfile.write(basis_text)
+                outfile.write(contrl_text)
+                outfile.write(data_text)
+                outfile.write(fmoxyz_text)
+                outfile.write(fmo_text)
+                outfile.write(fmohyb_text)
+                outfile.write(fmoprp_text)
+        energyfile.close()
+    else:
+        for confID in range(mol.GetNumConformers()):
+            fmoxyz_text = get_fmoxyz_text(mol,confID)
+            filename = f"{name}_{confID}.inp"
+            with open(filename,'w') as outfile:
+                outfile.write(system_text)
+                outfile.write(basis_text)
+                outfile.write(contrl_text)
+                outfile.write(data_text)
+                outfile.write(fmoxyz_text)
+                outfile.write(fmo_text)
+                outfile.write(fmohyb_text)
+                outfile.write(fmoprp_text)
