@@ -6,15 +6,41 @@ from rdkit import Chem
 from copy import deepcopy
 
 
-    
+def calculate_multiplicity_charge_of_fragments(fragments,bda,baa):
+    multiplicity_of_fragments = []
+    charge_of_fragments = []
+    scftyp = "RHF"
+    print("Fragment ID, # of electrons")
+    for f,frag in enumerate(fragments):
+        num_electrons = 0
+        charge = 0
+        mult = 1
+        for atom in frag.GetAtoms():
+            if atom.GetAtomicNum()>0:
+                charge += atom.GetFormalCharge()
+                num_electrons += atom.GetAtomicNum()
+        print(f,num_electrons)
+        if num_electrons%2!=0:
+            mult = 2
+        multiplicity_of_fragments.append(mult)
+        charge_of_fragments.append(charge)
+    return multiplicity_of_fragments,charge_of_fragments
+
 def draw_fragments_to_grid(fragments,name):
     frags_2d = []
-    for frag in fragments:
+    legends = []
+    for f,frag in enumerate(fragments):
         copy = deepcopy(frag)
         AllChem.Compute2DCoords(copy)
+        #for i,atom in enumerate(copy.GetAtoms()):
+        #    if atom.GetAtomicNum()!=0:
+        #        copy.GetAtomWithIdx(atom.GetIdx()).SetProp('atomNote',f'{atom.GetIdx()+1}')
+
         frags_2d.append(copy)
-    with open(f"{name}_fragments.svg",'w') as svgfile:
-        svgfile.write(Draw._MolsToGridSVG(frags_2d))
+        legends.append(f"Fragment {f+1}")
+
+    img = Draw.MolsToGridImage(frags_2d,legends=legends,subImgSize=(600,600))
+    img.save(f"{name}_fragments.png",quality=100)
 
 def get_BRICS_fragments(molecule):
     return Chem.GetMolFrags(BRICS.BreakBRICSBonds(molecule),asMols=True),list(BRICS.FindBRICSBonds(molecule))
@@ -34,7 +60,7 @@ def display_sp3_carbons(molecule,name):
     
     copymol = deepcopy(molecule)
     AllChem.Compute2DCoords(copymol)
-    Draw.MolToFile(copymol,f"{name}_sp3_shown_molecule.png",size=(600,600),dpi=300)
+    Draw.MolToFile((copymol),f"{name}_sp3_shown_molecule.png",size=(600,600),dpi=600)
     return molecule
 
 

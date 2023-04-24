@@ -2,6 +2,7 @@ from rdkit_utilities import *
 from rdkit import Chem
 import numpy as np
 from copy import deepcopy
+
 def get_basis_text(basis):
     basis_text = " $BASIS "
     basis_dict = {
@@ -19,31 +20,32 @@ def get_basis_text(basis):
         print(list(basis_dict.keys()))
         exit()
         
-def get_contrl_text(basis, theory):
+def get_contrl_text(basis, scftype,multiplicities):
     contrl_text = " $CONTRL "
-    
-    contrl_dict = {
-        ("rhf","6-31G"):"SCFTYP=RHF RUNTYP=ENERGY",
-        ("rhf","6-31G*"): "SCFTYP=RHF RUNTYP=ENERGY",
-        ("rhf","6-31G**"): "SCFTYP=RHF RUNTYP=ENERGY",
-        ("rhf","cc-pVDZ"): "SCFTYP=RHF RUNTYP=ENERGY ISPHER=1",
-        ("mp2","6-31G"):"SCFTYP=RHF RUNTYP=ENERGY MPLEVL=2",
-        ("mp2","6-31G*"):"SCFTYP=RHF RUNTYP=ENERGY MPLEVL=2",
-        ("mp2","6-31G**"):"SCFTYP=RHF RUNTYP=ENERGY MPLEVL=2",
-        ("mp2","cc-pVDZ"):"SCFTYP=RHF RUNTYP=ENERGY MPLEVL=2 ISPHER=1"
-    }
-    try:
-        contrl_text += contrl_dict[(theory,basis)]
-        contrl_text += " $END\n"
-        return contrl_text
-    except KeyError:
-        print(f"Unknown theory/basis combination {theory}/{basis}! Please use one of the following:")
-        print(list(contrl_dict.keys()))
-        exit()
+    for i in multiplicities: 
+        if i!='1':
+            scftype="UHF"
+            break
 
-def get_fmoprp_text():
+    if scftype == "RHF":
+        contrl_text += "SCFTYP=RHF "
+    elif scftype == "UHF":
+        contrl_text += "SCFTYP=UHF RUNTYP=ENERGY "
+    elif scftype == "MP2":
+        contrl_text += "SCFTYP=RHF RUNTYP=ENERGY MPLEVL=2 "
+    else:
+        print("Unknown SCF Type!")
+        exit()
+    if basis == "cc-pVDZ":
+        contrl_text += "ISPHER=1 "
+    contrl_text += " $END\n"
+    return contrl_text,scftype
+
+def get_fmoprp_text(scftype):
     fmoprp_text = " $FMOPRP\n"
     fmoprp_text += "MAXIT=100\n"
+    if scftype!="RHF":
+        fmoprp_text += "MODORB=3\n"
     fmoprp_text += " $END\n"
     return fmoprp_text
 
@@ -73,7 +75,7 @@ def get_fmoxyz_text(molecule,confID):
     atoms = molecule.GetAtoms()
     fmoxyz_text = " $FMOXYZ\n"
     for i,atom in enumerate(atoms):
-        fmoxyz_text += f"{atom.GetSymbol()} {atom.GetAtomicNum():>10.1f} {conf.GetAtomPosition(i).x:>10.5f} {conf.GetAtomPosition(i).y:>10.5f} {conf.GetAtomPosition(i).z:>10.5f}\n"
+        fmoxyz_text += f"{atom.GetSymbol()} {atom.GetAtomicNum():>10.5f}{conf.GetAtomPosition(i).x:>10.5f} {conf.GetAtomPosition(i).y:>10.5f} {conf.GetAtomPosition(i).z:>10.5f}\n"
     fmoxyz_text += " $END\n"
     return fmoxyz_text
 
@@ -113,32 +115,9 @@ def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",baa = [], bda =
                 atomlist[int(atom.GetProp("atomNote"))] = i+1
     atomlist = np.array(atomlist,dtype='str')
 
-    icharg = []
-    multiplicity = []
-    for frag in fragments:
-        charge = 0
-        mult = 1 
-        for atom in frag.GetAtoms():
-            if atom.GetAtomicNum()>0:
-                charge += atom.GetFormalCharge() 
-                mult += atom.GetNumRadicalElectrons()
-                """
-                if int(atom.GetProp("atomNote"))+1 in baa:
-                    print("BAA")
-                    charge+=1
-                    mult += 0.5
-                elif int(atom.GetProp("atomNote"))+1 in bda:
-                    print("BDA")
-                    charge -=1
-                    mult -= 0.5
-                print(mult,charge)
-        print("Fragment ends")
-        """
-        icharg.append(charge)
-        multiplicity.append(mult)
-    icharg = np.array(icharg,dtype='str')
-    multiplicity = np.array(multiplicity,dtype='str') 
-
+    multiplicity, icharg = calculate_multiplicity_charge_of_fragments(fragments,bda,baa)
+    multiplicity = np.array(multiplicity,dtype=str)
+    icharg = np.array(icharg,dtype=str)
     fmo_text = " $FMO\n"
     fmo_text += f"NFRAG={nfrag}\n"
     fmo_text += f"ICHARG(1)={','.join(icharg)}\n"
@@ -149,8 +128,8 @@ def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",baa = [], bda =
     fmo_text += " $FMOBND\n"
     for i in range(len(bda)):
         fmo_text += f"{-bda[i]:>3} {baa[i]:>3} {basis}\n"
-    fmo_text += " $END\n"
-    return fmo_text 
+    fmo_text += " $END\n" 
+    return fmo_text,multiplicity, icharg 
      
 def get_fmohyb_text(basis):
     fmohyb_text = " $FMOHYB\n"
@@ -237,13 +216,14 @@ def write_gamess_input_file(mol,nconf,scftyp,basis,name,fragmentation_style,bda,
     for atom in mol.GetAtoms():
         atom.SetProp("atomNote", str(atom.GetIdx()+1))
     system_text = get_system_text()
-    fmoprp_text = get_fmoprp_text()
+    fmo_text,multiplicities,charge = get_fmo_text(mol,name,basis,fragmentation_style,bda,baa)
+    contrl_text,scftype = get_contrl_text(basis, scftyp,multiplicities)
+    fmoprp_text = get_fmoprp_text(scftype)
     basis_text = get_basis_text(basis)
-    contrl_text = get_contrl_text(basis, scftyp)
     data_text = get_data_text(mol,name)
     fmohyb_text = get_fmohyb_text(basis)
-    fmo_text = get_fmo_text(mol,name,basis,fragmentation_style,bda,baa)
     
+
     if nconf>0:
         mol,sorted_res = gen_unique_conformers(mol,nconf)
         energyfile = open('conf_energies.txt','w')
@@ -253,7 +233,7 @@ def write_gamess_input_file(mol,nconf,scftyp,basis,name,fragmentation_style,bda,
             writer.write(mol,confId=confID)
             energyfile.write('%s,%s\n'%(confID,e))
             fmoxyz_text = get_fmoxyz_text(mol,confID)
-            filename = f"{name}_{confID}.inp"
+            filename = f"{name}_conf{confID}.inp"
             with open(filename,'w') as outfile:
                 outfile.write(system_text)
                 outfile.write(basis_text)
@@ -267,7 +247,7 @@ def write_gamess_input_file(mol,nconf,scftyp,basis,name,fragmentation_style,bda,
     else:
         for confID in range(mol.GetNumConformers()):
             fmoxyz_text = get_fmoxyz_text(mol,confID)
-            filename = f"{name}_{confID}.inp"
+            filename = f"{name}_conf{confID}.inp"
             with open(filename,'w') as outfile:
                 outfile.write(system_text)
                 outfile.write(basis_text)

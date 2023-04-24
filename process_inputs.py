@@ -32,7 +32,7 @@ def parse_inputs():
             '--scftyp',
             required=False,
             type=str,
-            default='rhf',
+            default='RHF',
             help="Type of SCF method"
     )
     parser.add_argument(
@@ -101,4 +101,7 @@ def parse_inputs():
     if molecule is None:
         print("Can't make molecule from given inputs!")
         exit()
+    for atom in molecule.GetAtoms():
+        atom.SetProp('atomNote',f'{atom.GetIdx()+1}')
+
     return molecule,args
