@@ -44,6 +44,7 @@ def get_contrl_text(basis, scftype,multiplicities):
 def get_fmoprp_text(scftype):
     fmoprp_text = " $FMOPRP\n"
     fmoprp_text += "MAXIT=100\n"
+    print(scftype)
     if scftype!="RHF":
         fmoprp_text += "MODORB=3\n"
     fmoprp_text += " $END\n"
@@ -79,10 +80,10 @@ def get_fmoxyz_text(molecule,confID):
     fmoxyz_text += " $END\n"
     return fmoxyz_text
 
-def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",baa = [], bda = []):
+def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",bda = [], baa = []):
     for atom in molecule.GetAtoms():
     # For each atom, set the property "atomNote" to a index+1 of the atom
-        atom.SetProp("atomNote", str(atom.GetIdx()))
+        atom.SetProp("atomNote", str(atom.GetIdx()+1))
     if fragmentation_style=='BRICS':
         print ("Fragmenting molecules using BRICS rules...",end="")
         atom_pairs = get_BRICS_pairs(molecule)
@@ -100,7 +101,7 @@ def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",baa = [], bda =
             else:
                 bda.append(i)
                 baa.append(j)
-    elif len(bda)== len(baa) and len(baa)>0:
+    elif len(bda) == len(baa) and len(baa)>0:
         print ("Making manual fragments from given BAA and BDA lists...",end="")
         fragments = fragment_selected_bonds(molecule,bda,baa)
         print (f"{len(fragments)} fragments made.")
@@ -112,7 +113,7 @@ def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",baa = [], bda =
     for i,frag in enumerate(fragments):
         for atom in frag.GetAtoms():
             if atom.GetSymbol()!='*':
-                atomlist[int(atom.GetProp("atomNote"))] = i+1
+                atomlist[int(atom.GetProp("atomNote"))-1] = i+1
     atomlist = np.array(atomlist,dtype='str')
 
     multiplicity, icharg = calculate_multiplicity_charge_of_fragments(fragments,bda,baa)
@@ -126,27 +127,35 @@ def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",baa = [], bda =
     fmo_text += " $END\n"
     # Add initial and final bond terms 
     fmo_text += " $FMOBND\n"
-    for i in range(len(bda)):
-        fmo_text += f"{-bda[i]:>3} {baa[i]:>3} {basis}\n"
-    fmo_text += " $END\n" 
-    return fmo_text,multiplicity, icharg 
-     
-def get_fmohyb_text(basis):
+    print('bda',bda)
+    print('baa',baa)
     fmohyb_text = " $FMOHYB\n"
+    seen_atoms = []
+    for i in range(len(bda)):
+        atom = molecule.GetAtomWithIdx(bda[i]-1).GetSymbol()
+        fmo_text += f"{-bda[i]:>3} {baa[i]:>3} {atom}-{basis}\n"
+        if atom not in seen_atoms:
+            fmohyb_text += get_fmohyb_text(basis,atom)
+            seen_atoms.append(atom)
+    fmo_text += " $END\n" 
+    fmohyb_text += " $END\n"
+    return fmo_text, fmohyb_text, multiplicity, icharg 
+     
+def get_fmohyb_text(basis,atom="C"):
     fmohyb_dict = {
-        "mini":"MINI 5 5\n \
+            "C-mini":"C-MINI 5 5\n \
   1 0  -0.109772    0.515046    0.000000    0.000000    0.864512\n \
   0 1  -0.109775    0.515062    0.815062    0.000000   -0.288166\n \
   0 1  -0.109775    0.515062   -0.407531   -0.705864   -0.288166\n \
   0 1  -0.109775    0.515062   -0.407531    0.705864   -0.288166\n \
   0 1   0.996474    0.015610    0.000000    0.000000    0.000000\n",
-        "hf-3c":"HF-3C 5 5\n \
+        "C-hf-3c":"C-HF-3C 5 5\n \
   1 0  -0.066232  0.310761  0.000000  0.000000  0.521599\n \
   0 1  -0.066232  0.310761 -0.245884 -0.425884 -0.173866\n \
   0 1  -0.066232  0.310761 -0.245884  0.425884 -0.173866\n \
   0 1  -0.066232  0.310761  0.491769  0.000000 -0.173866\n \
   0 1   1.001501  0.015689  0.000000  0.000000  0.000000\n",
-        "6-31G":"6-31G 9 5\n \
+        "C-6-31G":"C-6-31G 9 5\n \
  1 0  -0.067724    0.300281    0.000000    0.000000    0.606750\n \
        0.306535    0.000000    0.000000    0.309793\n \
  0 1  -0.067730    0.300310    0.572037    0.000000   -0.20223\n \
@@ -157,7 +166,7 @@ def get_fmohyb_text(basis):
        0.306552   -0.146031    0.252933   -0.103255\n \
  0 1   1.011954   -0.016447    0.000000    0.000000    0.000000\n \
       -0.059374    0.000000    0.000000   -0.000001\n",
-        "6-31G*":"6-31G* 15 5\n \
+        "C-6-31G*":"C-6-31G* 15 5\n \
  1 0  -0.065034    0.288264    0.000000    0.000000    0.604413\n \
        0.290129    0.000000    0.000000    0.319045   -0.017106\n \
       -0.017106    0.057935    0.000000    0.000000    0.000000\n \
@@ -173,7 +182,7 @@ def get_fmohyb_text(basis):
  0 1   1.010938   -0.011976    0.000000    0.000000    0.000000\n \
       -0.054085    0.000000    0.000000   -0.000001   -0.003175\n \
       -0.003175   -0.003175    0.000000    0.000000    0.000000\n",
-      "6-31G**":"6-31G** 15 5\n \
+      "C-6-31G**":"C-6-31G** 15 5\n \
  1 0  -0.068254    0.305270    0.000003    0.000000    0.619132\n \
        0.287030    0.000002    0.000000    0.307201   -0.022701\n \
       -0.022701    0.042170    0.000000    0.000000    0.000000\n \
@@ -189,7 +198,7 @@ def get_fmohyb_text(basis):
  0 1   1.010732   -0.013164    0.000000    0.000000    0.000001\n \
       -0.052063    0.000000    0.000000    0.000000   -0.001621\n \
       -0.001621   -0.001620    0.000000    0.000000    0.000000\n",
-      "cc-pVDZ":"cc-pVDZ 15\n \
+      "C-cc-pVDZ":"C-cc-pVDZ 15\n \
  1 0  0.073001  0.327576  0.211428  0.000000  0.000000  0.659685  0.000000\n \
       0.000000  0.308077 -0.021065 -0.021065  0.042131  0.000000  0.000000\n \
       0.000000\n \
@@ -204,11 +213,25 @@ def get_fmohyb_text(basis):
      -0.019861\n \
  0 1  0.996761 -0.035495 -0.034218  0.000000  0.000000  0.000000  0.000000\n \
       0.000000  0.000000  0.000000  0.000000  0.000000  0.000000  0.000000\n \
-      0.000000\n"
+      0.000000\n",
+      "O-6-31G**":"O-6-31G** 15 5\n \
+ 0 1 -0.994508, -0.021320,  0.000000,  0.000000,  0.000795,\n \
+     -0.005081,  0.000000,  0.000000, -0.000185,  0.004312,\n \
+      0.004312,  0.004182,  0.000000,  0.000000,  0.000000\n \
+ 0 1  0.106725, -0.241735,  0.221701, -0.383997,  0.168856,\n \
+     -0.191228,  0.121590, -0.210600,  0.108783,  0.001265,\n \
+     -0.005297, -0.005829,  0.006562, -0.007382,  0.012786\n \
+ 0 1 -0.106725,  0.241735,  0.443401, -0.000000, -0.168857,\n \
+      0.191228,  0.243180, -0.000000, -0.108784,  0.008578,\n \
+     -0.004546,  0.005829,  0.000000, -0.014764,  0.000000\n \
+ 0 1  0.106725, -0.241734,  0.221701,  0.383997,  0.168857,\n \
+     -0.191227,  0.121590,  0.210600,  0.108784,  0.001265,\n \
+     -0.005297, -0.005829, -0.006562, -0.007382, -0.012786\n \
+ 1 0  0.112274, -0.274803, -0.000000,  0.000001, -0.587264,\n \
+     -0.257693, -0.000000,  0.000001, -0.403430, -0.016204,\n \
+     -0.016204,  0.013015, -0.000000,  0.000000, -0.000000\n"
     }
-    fmohyb_text += fmohyb_dict[basis]
-    fmohyb_text += " $END\n"
-    return fmohyb_text
+    return fmohyb_dict[f"{atom}-{basis}"]
 
 def write_gamess_input_file(mol,nconf,scftyp,basis,name,fragmentation_style,bda,baa):
     # write gamess FMO input files for each conformer 
@@ -216,13 +239,11 @@ def write_gamess_input_file(mol,nconf,scftyp,basis,name,fragmentation_style,bda,
     for atom in mol.GetAtoms():
         atom.SetProp("atomNote", str(atom.GetIdx()+1))
     system_text = get_system_text()
-    fmo_text,multiplicities,charge = get_fmo_text(mol,name,basis,fragmentation_style,bda,baa)
+    fmo_text,fmohyb_text, multiplicities,charge = get_fmo_text(mol,name,basis,fragmentation_style,bda,baa)
     contrl_text,scftype = get_contrl_text(basis, scftyp,multiplicities)
     fmoprp_text = get_fmoprp_text(scftype)
     basis_text = get_basis_text(basis)
     data_text = get_data_text(mol,name)
-    fmohyb_text = get_fmohyb_text(basis)
-    
 
     if nconf>0:
         mol,sorted_res = gen_unique_conformers(mol,nconf)

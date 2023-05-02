@@ -92,7 +92,8 @@ def parse_inputs():
             print ("Either give a SMILES string or an SDF file!")
             exit()
         else:
-            molecule = Chem.AddHs(Chem.SDMolSupplier(args.sdffile)[0], addCoords=True)
+            #molecule = Chem.AddHs(Chem.SDMolSupplier(args.sdffile)[0], addCoords=True)
+            molecule = (Chem.SDMolSupplier(args.sdffile,removeHs=False)[0])
     else:
         if args.nconf==0:
             args.nconf = 1

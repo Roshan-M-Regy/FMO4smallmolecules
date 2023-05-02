@@ -4,9 +4,11 @@ from rdkit.Chem import rdMolAlign
 from rdkit.Chem import Draw
 from rdkit import Chem
 from copy import deepcopy
-
+import numpy as np
 
 def calculate_multiplicity_charge_of_fragments(fragments,bda,baa):
+    print("BDA", "BAA")
+    print(bda, baa)
     multiplicity_of_fragments = []
     charge_of_fragments = []
     scftyp = "RHF"
@@ -19,6 +21,17 @@ def calculate_multiplicity_charge_of_fragments(fragments,bda,baa):
             if atom.GetAtomicNum()>0:
                 charge += atom.GetFormalCharge()
                 num_electrons += atom.GetAtomicNum()
+                baa_presence = 0
+                bda_presence = 0
+                for i in baa:
+                    if i == int(atom.GetProp('atomNote')):
+                        baa_presence += 1
+                for i in bda:
+                    if i == int(atom.GetProp('atomNote')):
+                        bda_presence += 1
+
+                num_electrons -= bda_presence
+                num_electrons += baa_presence
         print(f,num_electrons)
         if num_electrons%2!=0:
             mult = 2
@@ -32,10 +45,6 @@ def draw_fragments_to_grid(fragments,name):
     for f,frag in enumerate(fragments):
         copy = deepcopy(frag)
         AllChem.Compute2DCoords(copy)
-        #for i,atom in enumerate(copy.GetAtoms()):
-        #    if atom.GetAtomicNum()!=0:
-        #        copy.GetAtomWithIdx(atom.GetIdx()).SetProp('atomNote',f'{atom.GetIdx()+1}')
-
         frags_2d.append(copy)
         legends.append(f"Fragment {f+1}")
 

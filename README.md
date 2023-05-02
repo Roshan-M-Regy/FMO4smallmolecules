@@ -1,5 +1,8 @@
 # FMO4smallmolecules
 ### FMO input file maker for small molecules
+This set of scripts can be used to create input files for running Fragment Molecular Orbital calculations using GAMESS on small molecules. There are some closed sources packages like Facio which work very well on proteins but I don't find it very user friendly for small molecule calculations and some open source packages which aren't very well maintained hence why I created this particular package. It is still far from user friendly but it works very well for my use case where I can just throw a SMILES string or an sdf file from DiffDock or Vina and get it fragmented either using BRICS rules or by specifying manual fragmentation points. 
+
+
 Usage when you only have smiles:
 ```
 python main.py --smiles "C[C@H](c1nc2cnc3c(c2n1C4CCC(CC4)CC#N)cc[nH]3)O" --nconf 10 --basis "6-31G**" --scftyp rhf --outprefix 1J6
@@ -22,11 +25,9 @@ The output consists of:
 4. .sdf file with conformers generated,
 5. conf_energies.txt with the energies of each generated conformer using the MMFF94s forcefield.
 
-This is the molecule in the usage example above, 
-![Sample molecule](1J6_2Dimage.png)
-and the fragments that were generated,
-![Fragments of sample molecule](1J6_fragments.svg)
 
-This code is under heavy development and should not be used for production calculations. The concerns right now are,
-1. The fragmenting is automated but uses BRICS rules which I am not focusing on right now,
-2. The biggest issue is the Hybrid Orbital Projection operators being used in the FMOHYB section of the input files as these were generated for only sp3 hybridized C-C bonds and not for a general X-X bond with any type of hybridization. This is the main bug being worked upon but I am not sure if this would be public.  
+This code is under heavy development and should not be used for production calculations. Currently, following additions are being worked upon,
+1. Adding hybrid orbitals for bond detached atoms other than SP3 hybridized Carbons
+2. Better representation of bond detached and attached atoms on fragment images 
+3. Adding SMIRNOFF forcefield support for conformer generation
+4. Testing the code on macrocyclic ligands where I believe the FMO technique might be more useful. 
