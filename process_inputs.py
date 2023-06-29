@@ -85,6 +85,28 @@ def parse_inputs():
             default=False,
             help="Save the 2D image of the molecule in a png file showing SP3 carbons and atom IDs.")
 
+    parser.add_argument(
+            "-normal",
+            "--normal",
+            required=False,
+            type=bool,
+            default=False,
+            help="Writes a normal GAMESS input file.")
+    parser.add_argument(
+            "-hmo",
+            "--makehmo",
+            required=False,
+            type=bool,
+            default=False,
+            help="Writes an input file for running HMO calculations")
+    parser.add_argument(
+            "-zbond",
+            "--zbondid",
+            required=False,
+            nargs = "+",
+            type=int,
+            default=[],
+            help="IDs of atoms between which lies the bond to be put on the z axis.")
     args = parser.parse_args()
 
     if args.smiles==None:
