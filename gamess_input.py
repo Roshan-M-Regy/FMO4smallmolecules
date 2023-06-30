@@ -84,6 +84,8 @@ def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",bda = [], baa =
     for atom in molecule.GetAtoms():
     # For each atom, set the property "atomNote" to a index+1 of the atom
         atom.SetProp("atomNote", str(atom.GetIdx()+1))
+    for bond in molecule.GetBonds():
+        bond.SetProp("bondNote", str(bond.GetIdx()+1))
     if fragmentation_style=='BRICS':
         print ("Fragmenting molecules using BRICS rules...",end="")
         atom_pairs = get_BRICS_pairs(molecule)
@@ -106,7 +108,8 @@ def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",bda = [], baa =
         fragments = fragment_selected_bonds(molecule,bda,baa)
         print (f"{len(fragments)} fragments made.")
    
-    draw_fragments_to_grid(fragments,name)
+    #draw_fragments_to_grid(fragments,name)
+    highlight_fragments(name,molecule,fragments,bda,baa)
 
     nfrag = len(fragments)
     atomlist = [1 for i in molecule.GetAtoms()]
@@ -115,6 +118,23 @@ def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",bda = [], baa =
             if atom.GetSymbol()!='*':
                 atomlist[int(atom.GetProp("atomNote"))-1] = i+1
     atomlist = np.array(atomlist,dtype='str')
+    INDATlines = "INDAT(1)=0\n"
+    for i in range(nfrag):
+        locations = np.where(np.array(atomlist,dtype=int)==i+1)[0]
+        INDATlines += f"{locations[0]+1}"
+        flag = 0
+        for j,val in enumerate(locations[:-1]):
+            if flag == 1:
+                INDATlines += f" {val+1}"
+                flag = 0
+            if val+1==locations[j+1]:
+                continue
+            else:
+                INDATlines += f" -{val+1}"
+                flag = 1
+        if flag == 0:
+            INDATlines += f" -{locations[-1]+1}"
+        INDATlines += " 0\n"
 
     multiplicity, icharg = calculate_multiplicity_charge_of_fragments(fragments,bda,baa)
     multiplicity = np.array(multiplicity,dtype=str)
@@ -123,12 +143,11 @@ def get_fmo_text(molecule,name,basis,fragmentation_style="BRICS",bda = [], baa =
     fmo_text += f"NFRAG={nfrag}\n"
     fmo_text += f"ICHARG(1)={','.join(icharg)}\n"
     fmo_text += f"MULT(1)={','.join(multiplicity)}\n"
-    fmo_text += f"INDAT(1)={','.join(atomlist)}\n"
+    #fmo_text += f"INDAT(1)={','.join(atomlist)}\n"
+    fmo_text += INDATlines
     fmo_text += " $END\n"
     # Add initial and final bond terms 
     fmo_text += " $FMOBND\n"
-    print('bda',bda)
-    print('baa',baa)
     fmohyb_text = " $FMOHYB\n"
     seen_atoms = []
     for i in range(len(bda)):
@@ -215,21 +234,37 @@ def get_fmohyb_text(basis,atom="C"):
       0.000000  0.000000  0.000000  0.000000  0.000000  0.000000  0.000000\n \
       0.000000\n",
       "O-6-31G**":"O-6-31G** 15 5\n \
- 0 1 -0.994508, -0.021320,  0.000000,  0.000000,  0.000795,\n \
-     -0.005081,  0.000000,  0.000000, -0.000185,  0.004312,\n \
-      0.004312,  0.004182,  0.000000,  0.000000,  0.000000\n \
- 0 1  0.106725, -0.241735,  0.221701, -0.383997,  0.168856,\n \
-     -0.191228,  0.121590, -0.210600,  0.108783,  0.001265,\n \
-     -0.005297, -0.005829,  0.006562, -0.007382,  0.012786\n \
- 0 1 -0.106725,  0.241735,  0.443401, -0.000000, -0.168857,\n \
-      0.191228,  0.243180, -0.000000, -0.108784,  0.008578,\n \
-     -0.004546,  0.005829,  0.000000, -0.014764,  0.000000\n \
- 0 1  0.106725, -0.241734,  0.221701,  0.383997,  0.168857,\n \
-     -0.191227,  0.121590,  0.210600,  0.108784,  0.001265,\n \
-     -0.005297, -0.005829, -0.006562, -0.007382, -0.012786\n \
- 1 0  0.112274, -0.274803, -0.000000,  0.000001, -0.587264,\n \
-     -0.257693, -0.000000,  0.000001, -0.403430, -0.016204,\n \
-     -0.016204,  0.013015, -0.000000,  0.000000, -0.000000\n"
+ 0 1  -0.994508   -0.021320    0.000000    0.000000    0.000795\n \
+      -0.005081    0.000000    0.000000   -0.000185    0.004312\n \
+       0.004312    0.004182    0.000000    0.000000    0.000000\n \
+ 0 1   0.106725   -0.241735    0.221701   -0.383997    0.168856\n \
+      -0.191228    0.121590   -0.210600    0.108783    0.001265\n \
+      -0.005297   -0.005829    0.006562   -0.007382    0.012786\n \
+ 0 1  -0.106725    0.241735    0.443401   -0.000000   -0.168857\n \
+       0.191228    0.243180   -0.000000   -0.108784    0.008578\n \
+      -0.004546    0.005829    0.000000   -0.014764    0.000000\n \
+ 0 1   0.106725   -0.241734    0.221701    0.383997    0.168857\n \
+      -0.191227    0.121590    0.210600    0.108784    0.001265\n \
+      -0.005297   -0.005829   -0.006562   -0.007382   -0.012786\n \
+ 1 0   0.112274   -0.274803   -0.000000    0.000001   -0.587264\n \
+      -0.257693   -0.000000    0.000001   -0.403430   -0.016204\n \
+      -0.016204    0.013015   -0.000000    0.000000   -0.000000\n",
+     "N-6-31G**":"N-6-31G** 15 5\n \
+ 0 1   0.994888    0.025251    0.000000    0.000000    0.000000\n \
+      -0.001484    0.000000    0.000000   -0.000000   -0.003500\n \
+      -0.003500   -0.003500    0.000000    0.000000    0.000000\n \
+ 0 1   0.102466   -0.216162    0.209018   -0.362030    0.147798\n \
+      -0.214321    0.122083   -0.211455    0.086326    0.004366\n \
+      -0.009631    0.007865    0.013997   -0.005714    0.009897\n \
+ 0 1  -0.102466    0.216162    0.418037   -0.000000   -0.147798\n \
+       0.214321    0.244167   -0.000000   -0.086326    0.016629\n \
+      -0.011364   -0.007865    0.000000   -0.011428    0.000000\n \
+ 0 1   0.102466   -0.216162    0.209019    0.362030    0.147798\n \
+      -0.214321    0.122084    0.211455    0.086326    0.004366\n \
+      -0.009631    0.007865   -0.013997   -0.005714   -0.009897\n \
+ 1 0  -0.102466    0.216161    0.000000    0.000000    0.443395\n \
+       0.214320    0.000000    0.000000    0.258979   -0.011364\n \
+      -0.011364    0.020128   -0.000000   -0.000000   -0.000000\n",
     }
     return fmohyb_dict[f"{atom}-{basis}"]
 
@@ -238,6 +273,8 @@ def write_gamess_input_file(mol,nconf,scftyp,basis,name,fragmentation_style,bda,
     # only the FMOXYZ section would change for each conformation 
     for atom in mol.GetAtoms():
         atom.SetProp("atomNote", str(atom.GetIdx()+1))
+    for bond in mol.GetBonds():
+        bond.SetProp("bondNote", str(bond.GetIdx()+1))
     system_text = get_system_text()
     fmo_text,fmohyb_text, multiplicities,charge = get_fmo_text(mol,name,basis,fragmentation_style,bda,baa)
     contrl_text,scftype = get_contrl_text(basis, scftyp,multiplicities)
