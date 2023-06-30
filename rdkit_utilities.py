@@ -5,10 +5,10 @@ from rdkit.Chem import Draw
 from rdkit import Chem
 from copy import deepcopy
 import numpy as np
-import matplotlib as mpl
-from collections import defaultdict 
 
 def calculate_multiplicity_charge_of_fragments(fragments,bda,baa):
+    print("BDA", "BAA")
+    print(bda, baa)
     multiplicity_of_fragments = []
     charge_of_fragments = []
     scftyp = "RHF"
@@ -38,7 +38,6 @@ def calculate_multiplicity_charge_of_fragments(fragments,bda,baa):
         multiplicity_of_fragments.append(mult)
         charge_of_fragments.append(charge)
     return multiplicity_of_fragments,charge_of_fragments
-
 
 def draw_fragments_to_grid(fragments,name):
     frags_2d = []
@@ -70,7 +69,7 @@ def display_sp3_carbons(molecule,name):
     
     copymol = deepcopy(molecule)
     AllChem.Compute2DCoords(copymol)
-    Draw.MolToFile((copymol),f"{name}_sp3_shown_molecule.svg",size=(600,600),dpi=600)
+    Draw.MolToFile((copymol),f"{name}_sp3_shown_molecule.png",size=(600,600),dpi=600)
     return molecule
 
 
@@ -82,8 +81,6 @@ def fragment_selected_bonds(molecule,bda,baa):
     fragments = Chem.GetMolFrags(Chem.FragmentOnBonds(molecule,bondlist),asMols=True)
     return fragments
     
-def gen_colors(nsamples=10):
-    return list(np.random.choice(range(256), size=nsamples))
 
 def gen_unique_conformers(mol,nconf):
     params = AllChem.ETKDGv3()
@@ -98,52 +95,10 @@ def gen_unique_conformers(mol,nconf):
     AllChem.MMFFOptimizeMoleculeConfs(mol, numThreads=0, mmffVariant='MMFF94s')
     res = []
     for cid in cids:
+        print(cid)
         ff = AllChem.MMFFGetMoleculeForceField(mol, mp, confId=cid)
         e = ff.CalcEnergy()
         res.append((cid,e))
     sorted_res = sorted(res, key=lambda x:x[1])
     rdMolAlign.AlignMolConformers(mol)
     return mol,sorted_res
-
-def highlight_fragments(name,molecule,fragments,bda,baa):
-    cmap = mpl.cm.get_cmap("Spectral")
-    colors = cmap(np.linspace(0,1,len(fragments)))
-    colors_as_tuples = []
-    for color in colors:
-        colors_as_tuples.append(tuple(color[:-1]))
-    atomcolorlist = defaultdict(list)
-    bondcolorlist = defaultdict(list)
-    arads = {}
-    for i,frag in enumerate(fragments):
-        for atom in frag.GetAtoms():
-            if atom.GetSymbol() not in ['*']:
-                atomcolorlist[int(atom.GetProp("atomNote"))-1].append(colors_as_tuples[i])
-                arads[int(atom.GetProp("atomNote"))-1] = 0.000001
-        for bond in frag.GetBonds():
-            try :
-                bondcolorlist[int(bond.GetProp("bondNote"))-1].append(colors_as_tuples[i])
-            except:
-                # fragmented bond
-                continue
-    for bda_atom,baa_atom in zip(bda,baa):
-        bond = molecule.GetBondBetweenAtoms(bda_atom-1,baa_atom-1)
-        bondcolorlist[int(bond.GetProp("bondNote"))-1].append(atomcolorlist[baa_atom-1][0])
-
-    d2d = Draw.rdMolDraw2D.MolDraw2DCairo(1000,1000)
-    dos = d2d.drawOptions()
-    dos.atomHighlightsAreCircles = True
-    dos.fillHighlights=False
-    newmolecule = deepcopy(molecule)
-    AllChem.Compute2DCoords(newmolecule)
-    for bond in newmolecule.GetBonds():
-        bond.SetProp("bondNote","")
-    for atom in newmolecule.GetAtoms():
-        atom.SetProp("atomLabel", atom.GetSymbol())
-    d2d.DrawMoleculeWithHighlights(newmolecule,"Fragmented",
-                                   dict(atomcolorlist),
-                                   dict(bondcolorlist),
-                                   arads,
-                                   {})
-    d2d.FinishDrawing() 
-    d2d.WriteDrawingText(f'{name}_fragments_highlighted.png')
-
